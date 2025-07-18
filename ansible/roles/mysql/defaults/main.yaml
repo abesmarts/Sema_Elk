@@ -1,0 +1,10 @@
+mysql_client_package: "{{ 'mysql-client' if ansible_os_family =='Debian' else 'mysql' }}"
+mysql_config_dir:  "{{ '/etc/mysql' if ansible_os_family == 'Debian' else '/etc' }}"
+mysql_config_file: "{{ mysql_config_dir }}/my.cnf"
+mysql_log_dir: /var/log/mysql
+
+mysql_host: mysql.opentofu-ansible.svc.cluster.local
+mysql_port: 3306
+mysql_user: root
+mysql_passwrod: password
+mysql_database: logs

@@ -1,0 +1,130 @@
+- name: Configure Docker VMs with Enhanced Capabilities
+  hosts: all
+  become: yes
+  vars:
+    python_scripts_dir: /opt/python_scripts
+    log_dir: /var/log/applications
+    
+  tasks:
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install essential packages
+      apt:
+        name:
+          - python3
+          - python3-pip
+          - python3-venv
+          - htop
+          - curl
+          - wget
+          - git
+          - vim
+          - openssh-server
+          - rsync
+          - logrotate
+        state: present
+        update_cache: yes
+
+    - name: Create application directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - "{{ python_scripts_dir }}"
+        - "{{ log_dir }}"
+        - /var/log/ansible
+
+    - name: Create devuser
+      user:
+        name: devuser
+        groups: sudo
+        append: yes
+        shell: /bin/bash
+        create_home: yes
+        generate_ssh_key: yes
+        ssh_key_bits: 2048
+        ssh_key_file: .ssh/id_rsa
+
+    - name: Set up SSH key for devuser
+      authorized_key:
+        user: devuser
+        state: present
+        key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+
+    - name: Configure SSH service
+      service:
+        name: ssh
+        state: started
+        enabled: yes
+
+    - name: Create Python virtual environment
+      command: python3 -m venv {{ python_scripts_dir }}/venv
+      args:
+        creates: "{{ python_scripts_dir }}/venv/bin/activate"
+
+    - name: Install Python packages in virtual environment
+      pip:
+        name:
+          - requests
+          - flask
+          - psutil
+          - docker
+          - elasticsearch
+          - loguru
+        virtualenv: "{{ python_scripts_dir }}/venv"
+
+    - name: Configure log rotation for application logs
+      copy:
+        content: |
+          {{ log_dir }}/*.log {
+              weekly
+              missingok
+              rotate 52
+              compress
+              delaycompress
+              notifempty
+              copytruncate
+              create 0644 root root
+          }
+        dest: /etc/logrotate.d/application_logs
+        mode: '0644'
+
+    - name: Create systemd service for log forwarding
+      copy:
+        content: |
+          [Unit]
+          Description=Application Log Forwarder
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=root
+          WorkingDirectory={{ log_dir }}
+          ExecStart=/bin/bash -c 'tail -F {{ log_dir }}/*.log | logger -t application-logs'
+          Restart=always
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/log-forwarder.service
+        mode: '0644'
+
+    - name: Enable and start log forwarder service
+      systemd:
+        name: log-forwarder
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    - name: Set up cron job for system monitoring
+      cron:
+        name: "System monitoring"
+        minute: "*/5"
+        job: "{{ python_scripts_dir }}/venv/bin/python {{ python_scripts_dir }}/system_monitor.py >> {{ log_dir }}/system_monitor.log 2>&1"
+        user: root

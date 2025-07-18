@@ -1,0 +1,14 @@
+- name: restart ssh
+  systemd:
+    name: "{{ 'ssh' if ansible_os_family == 'Debian' else 'sshd' }}"
+    state: restarted
+  when: ansible_service_mgr == 'systemd'
+
+- name: reload systemd
+  systemd:
+    daemon_reload: yes
+
+- name: update package cache
+  package:
+    update_cache: yes
+  when: ansible_os_family == "Debian" or ansible_os_family == "RedHat"

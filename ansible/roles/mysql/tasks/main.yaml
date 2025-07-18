@@ -1,0 +1,46 @@
+- name: Install MySQL client
+  package:
+    name: "{{ mysql_client_package }}"
+    state: present
+  tags: ['mysql','packages']
+
+- name: Create MySQL client configuration directory
+  file:
+    path: "{{ mysql_config_dir }}"
+    state: directory
+    mode: "0755"
+  tags: ['mysql','configuration']
+
+- name: Create MySQL log directory
+  file: 
+    path: "{{ mysql_log_dir }}"
+    stae: directory
+    mode: '0755'
+  tags: ['mysql','configuration']
+
+- name: Install Python MySQL library
+  pip:
+    name: PyMySQL
+    state: present
+  tags: ['mysql','python']
+
+- name: test MySQL connectivity (if MySQL service is available)
+  mysql_info:
+    login_host: " {{ mysql_host | default('mysql.opentofu-ansible.svc.cluster.local') }}"
+    login_port: "{{ mysql_port | default(3306) }}"
+    login_user: "{{ mysql_user | default('root') }}"
+    login_password: "{{ mysql_password | default('password') }}"
+  register: mysql_info
+  ignore_errors: true
+  tags: ['mysql','test']
+
+- name: Display MySQL connection status
+  debug:
+    msg: |
+      MySQL Connection Status:
+      {% if mysql_info.failed %}
+      - Status: Failed to connect
+      - Version: {{ mysql_info.version.full }}
+      {% endif %}
+  tags: ['mysql','test']
+

@@ -1,0 +1,17 @@
+[client]
+host = {{ mysql_host }}
+port = {{ mysql_port }}
+user = {{ mysql_user }}
+password = {{ mysql_password }}
+default-character-set = utf8mb4
+
+[mysql]
+default-character-set = utf8mb4
+auto-rehash = false
+safe-updates = true
+
+[mysqldump]
+single-transaction = true
+routines = true
+triggers = true 
+

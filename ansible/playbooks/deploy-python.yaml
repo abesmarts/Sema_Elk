@@ -1,0 +1,90 @@
+- name: Deploy Python Scripts to Remote Hosts
+  hosts: all
+  become: yes
+  vars:
+    python_scripts_local: "{{ playbook_dir }}/../python_scripts"
+    python_scripts_remote: /opt/python_scripts
+    venv_path: "{{ python_scripts_remote }}/venv"
+    
+  tasks:
+    - name: Ensure Python scripts directory exists
+      file:
+        path: "{{ python_scripts_remote }}"
+        state: directory
+        owner: devuser
+        group: devuser
+        mode: '0755'
+
+    - name: Copy Python scripts to remote host
+      synchronize:
+        src: "{{ python_scripts_local }}/"
+        dest: "{{ python_scripts_remote }}/"
+        delete: yes
+        recursive: yes
+        rsync_opts:
+          - "--exclude=__pycache__"
+          - "--exclude=*.pyc"
+          - "--exclude=.git"
+      delegate_to: localhost
+
+    - name: Set correct permissions for Python scripts
+      file:
+        path: "{{ python_scripts_remote }}"
+        owner: devuser
+        group: devuser
+        mode: '0755'
+        recurse: yes
+
+    - name: Install script dependencies
+      pip:
+        requirements: "{{ python_scripts_remote }}/requirements.txt"
+        virtualenv: "{{ venv_path }}"
+      when: ansible_stat.stat.exists
+      vars:
+        ansible_stat: "{{ ansible_stat_result }}"
+
+    - name: Check if requirements.txt exists
+      stat:
+        path: "{{ python_scripts_remote }}/requirements.txt"
+      register: ansible_stat_result
+
+    - name: Make scripts executable
+      file:
+        path: "{{ python_scripts_remote }}/{{ item }}"
+        mode: '0755'
+      with_fileglob:
+        - "{{ python_scripts_remote }}/*.py"
+
+    - name: Create systemd service for main application
+      template:
+        src: python_app.service.j2
+        dest: /etc/systemd/system/python-app.service
+        mode: '0644'
+      when: main_script is defined
+
+    - name: Enable and start Python application service
+      systemd:
+        name: python-app
+        enabled: yes
+        state: started
+        daemon_reload: yes
+      when: main_script is defined
+
+    - name: Create log file for Python applications
+      file:
+        path: /var/log/applications/python_app.log
+        state: touch
+        owner: devuser
+        group: devuser
+        mode: '0644'
+
+    - name: Display deployed scripts
+      find:
+        paths: "{{ python_scripts_remote }}"
+        patterns: "*.py"
+      register: deployed_scripts
+
+    - name: Show deployed Python scripts
+      debug:
+        msg: "Deployed script: {{ item.path }}"
+      loop: "{{ deployed_scripts.files }}"
