@@ -1,0 +1,192 @@
+services:
+  # Elasticsearch
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_/usr/share/elasticsearch/data
+      - ./elk/elasticsearch/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+    networks:
+      - semaphore_network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    labels:
+      - "filebeat_ingest=true"
+
+  # Logstash
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.15.0
+    container_name: logstash
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    ports:
+      - "5044:5044"
+      - "9600:9600"
+    volumes:
+      - ./elk/logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+      - ./elk/logstash/pipelines.yml:/usr/share/logstash/config/pipelines.yml:ro
+    environment:
+      - "JAVA_OPTS=-Xmx1g -Xms1g"
+      - "LS_JAVA_OPTS=-Xmx1g -Xms1g"
+      - "PIPELINE_WORKERS=2"
+      - "PIPELINE_BATCH_SIZE=125"
+      - "PIPELINE_BATCH_DELAY=50"
+    networks:
+      - semaphore_network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9600 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    labels:
+      - "filebeat_ingest=true"
+
+  # Kibana
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.15.0
+    container_name: kibana
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - XPACK_SECURITY_ENABLED=false
+      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=a7a6311933d3503b89bc2dbc36572c33a6c10925682e591bffcab6911c06786d
+    volumes:
+      - ./elk/kibana/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
+      - kibana_/usr/share/kibana/data
+    networks:
+      - semaphore_network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    labels:
+      - "filebeat_ingest=true"
+
+  # Filebeat
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.15.0
+    container_name: filebeat
+    user: root
+    depends_on:
+      logstash:
+        condition: service_healthy
+    volumes:
+      - ./elk/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/log:/var/log:ro
+      - filebeat_/usr/share/filebeat/data
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - LOGSTASH_HOSTS=logstash:5044
+    networks:
+      - semaphore_network
+    command: filebeat -e -strict.perms=false
+    labels:
+      - "filebeat_ingest=true"
+
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_USER: semaphore
+      MYSQL_PASSWORD: semaphore
+      MYSQL_DATABASE: semaphore
+      MYSQL_RANDOM_ROOT_PASSWORD: yes
+    volumes:
+      - mysql_/var/lib/mysql
+      - ./init-mysql.sql:/docker-entrypoint-initdb.d/init-mysql.sql:ro
+    networks:
+      - semaphore_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "semaphore", "-psemaphore"]
+      timeout: 10s
+      retries: 5
+      interval: 30s
+    labels:
+      - "filebeat_ingest=true"
+
+  # Semaphore
+  semaphore:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: semaphore
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      SEMAPHORE_DB_DIALECT: mysql
+      SEMAPHORE_DB_HOST: mysql
+      SEMAPHORE_DB_NAME: semaphore
+      SEMAPHORE_DB_USER: semaphore
+      SEMAPHORE_DB_PASS: semaphore
+      SEMAPHORE_ADMIN: admin
+      SEMAPHORE_ADMIN_PASSWORD: semaphorepassword
+      SEMAPHORE_ADMIN_NAME: admin
+      SEMAPHORE_ADMIN_EMAIL: admin@localhost
+      SEMAPHORE_PLAYBOOK_PATH: /tmp/semaphore/
+      # Enhanced logging configuration
+      SEMAPHORE_EVENT_LOG_ENABLED: "true"
+      SEMAPHORE_EVENT_LOG_PATH: /var/log/semaphore/events.log
+      SEMAPHORE_TASK_LOG_ENABLED: "true"
+      SEMAPHORE_TASK_LOG_PATH: /var/log/semaphore/tasks.log
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ../ansible:/mnt/localproject/ansible:ro
+      - ../opentofu:/mnt/localproject/opentofu:ro
+      - ./requirements.txt:/etc/semaphore/requirements.txt:ro
+      - semaphore_/tmp/semaphore
+      - semaphore_logs:/var/log/semaphore
+    networks:
+      - semaphore_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/ping"]
+      timeout: 10s
+      retries: 5
+      interval: 30s
+    labels:
+      - "filebeat_ingest=true"
+
+volumes:
+  mysql_:
+    driver: local
+  semaphore_:
+    driver: local
+  semaphore_logs:
+    driver: local
+  elasticsearch_:
+    driver: local
+  kibana_:
+    driver: local
+  filebeat_:
+    driver: local
+
+networks:
+  semaphore_network:
+    driver: bridge
+    external: false

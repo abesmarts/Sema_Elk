@@ -1,0 +1,32 @@
+# Elasticsearch Configuration
+cluster.name: "semaphore-elk-cluster"
+node.name: "semaphore-elasticsearch-node"
+
+# Network settings
+network.host: 0.0.0.0
+http.port: 9200
+transport.port: 9300
+
+# Discovery settings
+discovery.type: single-node
+cluster.initial_master_nodes: ["semaphore-elasticsearch-node"]
+
+# Security settings
+xpack.security.enabled: false
+xpack.security.enrollment.enabled: false
+xpack.security.http.ssl.enabled: false
+xpack.security.transport.ssl.enabled: false
+
+# Performance settings
+bootstrap.memory_lock: false
+indices.query.bool.max_clause_count: 10000
+
+# Logging
+logger.level: INFO
+appender.console.type: Console
+appender.console.name: console
+appender.console.layout.type: PatternLayout
+appender.console.layout.pattern: '[%d{ISO8601}][%-5p][%-25c{1.}] [%node_name]%marker %m%n'
+
+# Index settings
+action.auto_create_index: "+*"

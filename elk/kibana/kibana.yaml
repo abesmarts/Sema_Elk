@@ -1,0 +1,29 @@
+# Kibana Configuration
+server.name: "semaphore-kibana"
+server.host: "0.0.0.0"
+server.port: 5601
+
+# Elasticsearch connection
+elasticsearch.hosts: ["http://elasticsearch:9200"]
+elasticsearch.requestTimeout: 30000
+
+# Security settings
+xpack.security.enabled: false
+xpack.encryptedSavedObjects.encryptionKey: "a7a6311933d3503b89bc2dbc36572c33a6c10925682e591bffcab6911c06786d"
+
+# Logging
+logging.level: info
+logging.dest: stdout
+logging.json: false
+
+# Monitoring
+monitoring.enabled: true
+monitoring.kibana.collection.enabled: false
+
+# Dashboard settings
+kibana.index: ".kibana"
+kibana.defaultAppId: "dashboard"
+
+# Advanced settings
+elasticsearch.pingTimeout: 1500
+elasticsearch.startupTimeout: 5000

@@ -1,0 +1,79 @@
+# Filebeat Configuration
+filebeat.inputs:
+- type: docker
+  enabled: true
+  containers.ids: '*'
+  containers.stream: "all"
+  
+  # Decode JSON logs
+  processors:
+    - decode_json_fields:
+        fields: ["message"]
+        target: ""
+        overwrite_keys: true
+        add_error_key: true
+        max_depth: 10
+    - add_docker_meta
+        host: "unix:///var/run/docker.sock"
+    - add_host_meta
+        when.not.contains.tags: forwarded
+
+# Additional log files
+- type: log
+  enabled: true
+  paths:
+    - /var/log/semaphore/*.log
+  fields:
+    logtype: semaphore_file
+    service: semaphore
+  fields_under_root: true
+
+# Autodiscover configuration
+filebeat.autodiscover:
+  providers:
+    - type: docker
+      hints.enabled: true
+      templates:
+        - condition:
+            contains:
+              docker.container.labels.filebeat_ingest: "true"
+          config:
+            - type: container
+              paths:
+                - /var/lib/docker/containers/${data.docker.container.id}/*.log
+              processors:
+                - add_docker_meta
+                    host: "unix:///var/run/docker.sock"
+                - decode_json_fields:
+                    fields: ["message"]
+                    target: ""
+                    overwrite_keys: true
+
+# Processors
+processors:
+  - add_host_meta
+      when.not.contains.tags: forwarded
+  - add_cloud_meta ~
+  - add_docker_meta ~
+  - add_kubernetes_meta ~
+
+# Output configuration
+output.logstash:
+  hosts: ["logstash:5044"]
+  timeout: 15
+  compression_level: 3
+  escape_html: false
+
+# Logging
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: /var/log/filebeat
+  name: filebeat
+  keepfiles: 7
+  permissions: 0644
+
+# Monitoring
+monitoring.enabled: true
+monitoring.elasticsearch:
+  hosts: ["elasticsearch:9200"]
